@@ -2399,6 +2399,14 @@ func ResourceContainerCluster() *schema.Resource {
 							Optional:    true,
 							Description: `The Cloud KMS cryptoKey to use for Confidential Hyperdisk on the control plane nodes.`,
 						},
+						"control_plane_disk_encryption_key_versions": {
+							Type:        schema.TypeSet,
+							Optional:    true,
+							Description: `The Cloud KMS cryptoKey versions to use for Confidential Hyperdisk on the control plane nodes.`,
+							Elem: &schema.Schema{
+								Type: schema.TypeString,
+							},
+						},
 						"gkeops_etcd_backup_encryption_key": {
 							Type:        schema.TypeString,
 							Optional:    true,
@@ -6310,6 +6318,13 @@ func expandUserManagedKeysConfig(configured interface{}) *container.UserManagedK
 			umkc.ServiceAccountVerificationKeys = vkss
 		}
 	}
+	if v, ok := config["control_plane_disk_encryption_key_versions"]; ok {
+		ck := v.(*schema.Set)
+		ckss := tpgresource.ConvertStringSet(ck)
+		if len(ckss) > 0 {
+			umkc.ControlPlaneDiskEncryptionKeyVersions = ckss
+		}
+	}
 	return umkc
 }
 
@@ -7400,6 +7415,10 @@ func flattenUserManagedKeysConfig(c *container.UserManagedKeysConfig) []map[stri
 	}
 	if len(c.ServiceAccountVerificationKeys) != 0 {
 		f["service_account_verification_keys"] = schema.NewSet(schema.HashString, tpgresource.ConvertStringArrToInterface(c.ServiceAccountVerificationKeys))
+		allEmpty = false
+	}
+	if len(c.ControlPlaneDiskEncryptionKeyVersions) != 0 {
+		f["control_plane_disk_encryption_key_versions"] = schema.NewSet(schema.HashString, tpgresource.ConvertStringArrToInterface(c.ControlPlaneDiskEncryptionKeyVersions))
 		allEmpty = false
 	}
 	if allEmpty {

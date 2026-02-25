@@ -6172,32 +6172,44 @@ func TestAccContainerCluster_WithCPAFeatures(t *testing.T) {
 		t.Fatal("Didn't find an appropriate cryptoKeyVersion to use as the service account signing key")
 	}
 
-	context := map[string]interface{}{
-		"resource_name":            clusterName,
-		"networkName":              networkName,
-		"subnetworkName":           subnetworkName,
-		"disk_key":                 diskKey.CryptoKey.Name,
-		"backup_key":               backupKey.CryptoKey.Name,
-		"signing_cryptokeyversion": signingCryptoKeyVersion.Name,
-		"random_suffix":            suffix,
-	}
+	var diskKeyVersion *cloudkms.CryptoKeyVersion
+	for _, ckv := range diskKey.CryptoKeyVersions {
+		if ckv.State == "ENABLED" {
+			diskKeyVersion = ckv
+		}
 
-	acctest.VcrTest(t, resource.TestCase{
-		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
-		CheckDestroy:             testAccCheckContainerClusterDestroyProducer(t),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccContainerCluster_EnableCPAFeatures(context),
+		if diskKeyVersion == nil {
+			t.Fatal("Didn't find an appropriate cryptoKeyVersion for diskKeyVersion to use as the service account signing key")
+		}
+
+		context := map[string]interface{}{
+			"resource_name":            clusterName,
+			"networkName":              networkName,
+			"subnetworkName":           subnetworkName,
+			"disk_key":                 diskKey.CryptoKey.Name,
+			"disk_key_version":         diskKeyVersion.Name,
+			"backup_key":               backupKey.CryptoKey.Name,
+			"signing_cryptokeyversion": signingCryptoKeyVersion.Name,
+			"random_suffix":            suffix,
+		}
+
+		acctest.VcrTest(t, resource.TestCase{
+			PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+			ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+			CheckDestroy:             testAccCheckContainerClusterDestroyProducer(t),
+			Steps: []resource.TestStep{
+				{
+					Config: testAccContainerCluster_EnableCPAFeatures(context),
+				},
+				{
+					ResourceName:            "google_container_cluster.with_cpa_features",
+					ImportState:             true,
+					ImportStateVerify:       true,
+					ImportStateVerifyIgnore: []string{"deletion_protection"},
+				},
 			},
-			{
-				ResourceName:            "google_container_cluster.with_cpa_features",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"deletion_protection"},
-			},
-		},
-	})
+		})
+	}
 }
 
 func testAccContainerCluster_EnableCPAFeatures(context map[string]interface{}) string {
@@ -6423,6 +6435,9 @@ resource "google_container_cluster" "with_cpa_features" {
 		]
 		service_account_verification_keys = [
 			"%{signing_cryptokeyversion}",
+		]
+		control_plane_disk_encryption_key_versions = [
+			"%{disk_key_version}",
 		]
   }
   deletion_protection = false
@@ -15128,7 +15143,8 @@ func TestAccContainerCluster_WithCPAFeaturesUpdate(t *testing.T) {
 	subnetworkName := acctest.BootstrapSubnet(t, "gke-cluster", networkName)
 
 	// Bootstrap KMS keys and needed IAM role.
-	diskKey := acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "control-plane-disk-encryption")
+	diskKey1 := acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "control-plane-disk-encryption-1")
+	diskKey2 := acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "control-plane-disk-encryption-2")
 	signingKey1 := acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ASYMMETRIC_SIGN", "us-central1", "rs256-service-account-signing-1")
 	signingKey2 := acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ASYMMETRIC_SIGN", "us-central1", "rs256-service-account-signing-2")
 	backupKey := acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "etcd-backups")
@@ -15177,11 +15193,32 @@ func TestAccContainerCluster_WithCPAFeaturesUpdate(t *testing.T) {
 		t.Fatal("Didn't find an appropriate cryptoKeyVersion for signingCryptoKeyVersion2 to use as the service account signing key")
 	}
 
+	var diskKeyVersion1 *cloudkms.CryptoKeyVersion
+	for _, ckv := range diskKey1.CryptoKeyVersions {
+		if ckv.State == "ENABLED" {
+			diskKeyVersion1 = ckv
+		}
+	}
+	if diskKeyVersion1 == nil {
+		t.Fatal("Didn't find an appropriate cryptoKeyVersion for diskKeyVersion1 to use as the service account signing key")
+	}
+
+	var diskKeyVersion2 *cloudkms.CryptoKeyVersion
+	for _, ckv := range diskKey2.CryptoKeyVersions {
+		if ckv.State == "ENABLED" {
+			diskKeyVersion2 = ckv
+		}
+	}
+	if diskKeyVersion2 == nil {
+		t.Fatal("Didn't find an appropriate cryptoKeyVersion for diskKeyVersion2 to use as the service account signing key")
+	}
+
 	context := map[string]interface{}{
 		"resource_name":            clusterName,
 		"networkName":              networkName,
 		"subnetworkName":           subnetworkName,
-		"disk_key":                 diskKey.CryptoKey.Name,
+		"disk_key":                 diskKey1.CryptoKey.Name,
+		"disk_key_version":         diskKeyVersion1.Name,
 		"backup_key":               backupKey.CryptoKey.Name,
 		"signing_cryptokeyversion": signingCryptoKeyVersion1.Name,
 		"random_suffix":            suffix,
@@ -15191,7 +15228,8 @@ func TestAccContainerCluster_WithCPAFeaturesUpdate(t *testing.T) {
 		"resource_name":            clusterName,
 		"networkName":              networkName,
 		"subnetworkName":           subnetworkName,
-		"disk_key":                 diskKey.CryptoKey.Name,
+		"disk_key":                 diskKey2.CryptoKey.Name,
+		"disk_key_version":         diskKeyVersion2.Name,
 		"backup_key":               backupKey.CryptoKey.Name,
 		"signing_cryptokeyversion": signingCryptoKeyVersion2.Name,
 		"random_suffix":            suffix,
@@ -15244,6 +15282,9 @@ func testAccContainerCluster_EnableCPAFeaturesWithSAkeys(context map[string]inte
 				]
 				service_account_verification_keys = [
 					"%{signing_cryptokeyversion}",
+				]
+				control_plane_disk_encryption_key_versions = [
+					"%{disk_key_version}",
 				]
 			}
 			deletion_protection = false
